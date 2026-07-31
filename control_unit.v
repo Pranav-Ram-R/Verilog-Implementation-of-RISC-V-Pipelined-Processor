@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 module control_unit (
     input  wire [6:0] opcode,
     output reg        branch,
@@ -9,15 +11,19 @@ module control_unit (
     output reg        mem_read,
     output reg [1:0]  wb_src
 );
-    localparam OP_RTYPE  = 7'b0110011;
-    localparam OP_ITYPE  = 7'b0010011;
-    localparam OP_LOAD   = 7'b0000011;
-    localparam OP_STORE  = 7'b0100011;
-    localparam OP_BRANCH = 7'b1100011;
+
+    // RV32I opcodes
+    localparam OP_RTYPE  = 7'b0110011;  // add, sub, and, or, slt, srl
+    localparam OP_ITYPE  = 7'b0010011;  // addi, andi, ori
+    localparam OP_LOAD   = 7'b0000011;  // lw
+    localparam OP_STORE  = 7'b0100011;  // sw
+    localparam OP_BRANCH = 7'b1100011;  // beq
     localparam OP_JAL    = 7'b1101111;
     localparam OP_JALR   = 7'b1100111;
 
     always @(*) begin
+        // Safe defaults - every signal explicitly assigned every cycle.
+        // These also make opcode 0 (the bubble injected on flush) a NOP.
         branch    = 1'b0;
         jump      = 1'b0;
         reg_write = 1'b0;
@@ -30,12 +36,15 @@ module control_unit (
         case (opcode)
             OP_RTYPE: begin
                 reg_write = 1'b1;
+                alu_src   = 1'b0;
                 alu_op    = 2'b10;
+                wb_src    = 2'b00;
             end
             OP_ITYPE: begin
                 reg_write = 1'b1;
                 alu_src   = 1'b1;
-                alu_op    = 2'b10;
+                alu_op    = 2'b11;   // funct3 lookup, but WITHOUT funct7
+                wb_src    = 2'b00;
             end
             OP_LOAD: begin
                 reg_write = 1'b1;
@@ -65,7 +74,8 @@ module control_unit (
                 alu_op    = 2'b00;
                 wb_src    = 2'b10;
             end
-            default: ;
+            default: ;  // defaults already assigned
         endcase
     end
+
 endmodule

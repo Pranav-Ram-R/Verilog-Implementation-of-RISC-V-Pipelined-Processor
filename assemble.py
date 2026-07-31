@@ -1,6 +1,6 @@
 """
-Minimal RISC-V RV32I assembler for the test program.
-Produces hex output, one 32-bit instruction per line.
+Minimal RV32I assembler for the test program.
+Writes program.hex, one 32-bit instruction per line.
 """
 
 def reg(r):
@@ -98,15 +98,14 @@ program = [
     ("sw   x0, x2, 0",   sw("x0", "x2", 0)),
 ]
 
-print("# Verified program.hex")
-print()
 for asm, enc in program:
     print(f"{enc:08x}    // {asm}")
 
-# Also write a plain hex file (no comments, for $readmemh)
-with open("/home/claude/program.hex", "w") as f:
-    for asm, enc in program:
+# Plain hex file, no comments, for $readmemh
+OUT = "program.hex"
+with open(OUT, "w") as f:
+    for _, enc in program:
         f.write(f"{enc:08x}\n")
 
 print()
-print("Wrote /home/claude/program.hex")
+print(f"Wrote {OUT}")

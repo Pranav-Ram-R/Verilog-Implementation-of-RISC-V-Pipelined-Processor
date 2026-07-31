@@ -1,0 +1,33 @@
+# Local editor / tooling config
+.vscode/
+.idea/
+
+# Vivado project output
+*.xpr
+*.jou
+*.log
+*.str
+*.wdb
+*.pb
+.Xil/
+*.cache/
+*.gen/
+*.hw/
+*.ip_user_files/
+*.runs/
+*.sim/
+xsim.dir/
+webtalk*/
+xelab.*
+xvlog.*
+xsim*.tcl
+
+# Icarus Verilog output
+sim
+a.out
+*.vvp
+*.vcd
+
+# Python
+__pycache__/
+*.pyc

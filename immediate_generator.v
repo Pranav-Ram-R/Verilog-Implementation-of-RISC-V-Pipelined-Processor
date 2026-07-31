@@ -1,3 +1,7 @@
+`timescale 1ns / 1ps
+
+// Sign-extends the I / S / B / J-type immediate fields to 32 bits.
+
 module immediate_generator (
     input  wire [31:0] instruction,
     output reg  [31:0] immediate

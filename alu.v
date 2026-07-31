@@ -1,3 +1,5 @@
+`timescale 1ns / 1ps
+
 module alu (
     input  wire [31:0] operand_a,
     input  wire [31:0] operand_b,
@@ -5,6 +7,8 @@ module alu (
     output reg  [31:0] alu_result,
     output wire        zero_flag
 );
+
+    // ALU operation encodings
     localparam ALU_ADD = 4'b0000;
     localparam ALU_SUB = 4'b0001;
     localparam ALU_AND = 4'b0010;
@@ -25,4 +29,5 @@ module alu (
     end
 
     assign zero_flag = (alu_result == 32'd0);
+
 endmodule

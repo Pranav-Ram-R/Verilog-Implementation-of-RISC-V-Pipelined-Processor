@@ -9,8 +9,7 @@ together at the top level, rather than one large behavioural block, so that
 each piece of the datapath can be pointed at and explained in isolation.
 
 **Verified:** compiles with zero errors and zero warnings under Vivado xsim
-2019.2 and Icarus Verilog; the bundled test program runs to
-`PASS: mem[0] = 5`.
+2019.2 and Icarus Verilog; both bundled directed test programs pass.
 
 ---
 
@@ -24,8 +23,8 @@ each piece of the datapath can be pointed at and explained in isolation.
 6. [Control signal reference](#control-signal-reference)
 7. [Two-level ALU decode](#two-level-alu-decode)
 8. [Hazards: the interesting part](#hazards-the-interesting-part)
-9. [The falling-edge register file](#the-falling-edge-register-file)
-10. [Worked example: cycle-by-cycle trace](#worked-example-cycle-by-cycle-trace)
+9. [The register-file write bypass](#the-register-file-write-bypass)
+10. [Worked examples: cycle-by-cycle traces](#worked-examples-cycle-by-cycle-traces)
 11. [Performance](#performance)
 12. [Verification coverage](#verification-coverage)
 13. [Known limitations](#known-limitations)
@@ -37,40 +36,43 @@ each piece of the datapath can be pointed at and explained in isolation.
 
 **Icarus Verilog:**
 
+There are two testbenches, so name the one you want with `-s`:
+
 ```bash
-iverilog -o sim *.v
-vvp sim
+iverilog -s tb_riscv_top -o sim_fib     *.v && vvp sim_fib
+iverilog -s tb_loaduse   -o sim_loaduse *.v && vvp sim_loaduse
 ```
 
 **Vivado xsim, command line:**
 
 ```bash
 xvlog *.v
-xelab tb_riscv_top -s tbsim
-xsim tbsim -runall
+xelab tb_riscv_top -s fib && xsim fib -runall
+xelab tb_loaduse   -s lu  && xsim lu  -runall
 ```
 
 **Vivado GUI:**
 
 1. Create a new RTL Project, target any part (e.g. Artix-7 `xc7a35t`).
-2. Add all `.v` files as design sources except `tb_riscv_top.v`.
-3. Add `tb_riscv_top.v` as a simulation source.
-4. Add `program.hex` — it must sit in the run directory when the simulation
-   starts, since `$readmemh` resolves it relative to the working directory.
+2. Add all `.v` files as design sources except `tb_riscv_top.v` and
+   `tb_loaduse.v`.
+3. Add both testbenches as simulation sources and set the one you want as top.
+4. Add both `.hex` files — they must sit in the run directory when the
+   simulation starts, since `$readmemh` resolves relative to the working
+   directory.
 5. Run Behavioral Simulation.
 
-Expected final output in every flow:
+Expected final output:
 
 ```
-==========================================
-PASS: mem[0] = 5 (expected 5 = fib(5))
-==========================================
+PASS: mem[0] = 5 (expected 5 = fib(5))                                  # tb_riscv_top
+PASS: mem[1] = 27 (expected 27), load-use stall asserted for 1 cycle    # tb_loaduse
 ```
 
-To regenerate the program image after editing the assembler:
+To regenerate both program images after editing the assembler:
 
 ```bash
-python assemble.py      # writes program.hex
+python assemble.py      # writes program.hex and program_loaduse.hex
 ```
 
 ---
@@ -218,7 +220,7 @@ A three-way mux on `wb_src`:
 | [riscv_top.v](riscv_top.v) | `clk`, `rst_n` | Stage wiring, forwarding muxes, PC redirect, WB mux |
 | [program_counter.v](program_counter.v) | `pc_next` → `pc_current` | 32-bit PC register, async reset to 0 |
 | [instruction_memory.v](instruction_memory.v) | `addr` → `instruction` | 256×32 ROM, `$readmemh("program.hex")` |
-| [register_file.v](register_file.v) | `rs1/rs2/rd_addr`, `rd_data` → `rs1/rs2_data` | 32 GPRs, combinational read, **negedge** write, x0 hardwired |
+| [register_file.v](register_file.v) | `rs1/rs2/rd_addr`, `rd_data` → `rs1/rs2_data` | 32 GPRs, combinational read with **write bypass**, x0 hardwired |
 | [immediate_generator.v](immediate_generator.v) | `instruction` → `immediate` | Selects and sign-extends I/S/B/J immediates |
 | [control_unit.v](control_unit.v) | `opcode` → 8 control signals | First-level decode |
 | [alu_control.v](alu_control.v) | `alu_op`, `funct3`, `funct7` → `alu_ctrl` | Second-level decode |
@@ -230,8 +232,11 @@ A three-way mux on `wb_src`:
 | [mem_wb_reg.v](mem_wb_reg.v) | 3 datapath + 3 control fields | MEM/WB register — both tied off |
 | [forwarding_unit.v](forwarding_unit.v) | source/dest addrs → `forward_a/b` | Combinational bypass control |
 | [hazard_detection_unit.v](hazard_detection_unit.v) | load + addr compare → `stall` | Load-use interlock |
-| [tb_riscv_top.v](tb_riscv_top.v) | — | Cycle trace + self-checking PASS/FAIL |
-| [assemble.py](assemble.py) | — | Minimal RV32I encoder producing `program.hex` |
+| [tb_riscv_top.v](tb_riscv_top.v) | — | fib(5) test: forwarding + branch flush, self-checking |
+| [tb_loaduse.v](tb_loaduse.v) | — | Load-use test: asserts the stall fires exactly once |
+| [assemble.py](assemble.py) | — | Minimal RV32I encoder producing both `.hex` images |
+| `program.hex` | — | Test program 1: fib(5) |
+| `program_loaduse.hex` | — | Test program 2: load followed by a dependent use |
 
 All four pipeline registers share the same port shape and the same priority
 ladder — **reset > flush > stall > advance** — even where a port is tied off.
@@ -368,8 +373,8 @@ producer has not written it back yet. Two cases matter:
 | 2 instructions | MEM/WB | Bypass the writeback value | `2'b01` |
 | 3 instructions | Already written back | Register file read | `2'b00` |
 
-The distance-3 case is only safe because of the falling-edge register file —
-see the next section.
+The distance-3 case is only safe because of the register-file write bypass —
+see the dedicated section below.
 
 **Priority.** EX/MEM is checked *first*. If both stages hold a pending write to
 the same register, EX/MEM holds the newer value and must win. Reversing these
@@ -456,50 +461,64 @@ ID/EX — so they share one signal.
 
 ---
 
-## The falling-edge register file
+## The register-file write bypass
 
-This is the design decision most likely to be asked about, because it violates
-the project's own "everything is posedge" convention.
+This is the design decision most likely to be asked about, because the
+forwarding unit does *not* cover it.
 
 **The problem.** In a 5-stage pipeline, a producer in WB and a consumer in ID
-occupy the *same cycle* when they are three instructions apart. There is no
-forwarding path back into ID — forwarding targets the EX operand muxes. So the
-register file itself must deliver the value being written in that very cycle.
+occupy the *same cycle* when they are three instructions apart. Forwarding
+targets the EX operand muxes, so there is no bypass path back into ID. The
+register file itself must therefore deliver the value being written in that
+very cycle.
 
-**Why posedge writes break.** If the write committed on the rising edge, the
-array update and the ID/EX register latching the read result would happen at
-the same instant. Which one wins depends on delta-cycle ordering between a
-nonblocking array write and a combinational read propagating through. Icarus
-and Vivado xsim resolve that ordering differently — *identical RTL, different
-results*.
+**Why a plain posedge write breaks.** The array update and the ID/EX register
+latching the read result land on the same instant. Which one wins depends on
+delta-cycle ordering between a nonblocking array write and a combinational read
+propagating through — and Icarus and Vivado xsim resolve that ordering
+differently. *Identical RTL, different results.*
 
-**The fix.** Commit on the falling edge. The write lands half a cycle early, so
-the value is already in the array before the next rising edge samples the read.
-This is the classic "write in the first half of the cycle, read in the second
-half" register file assumed by the standard 5-stage design. It is race-free and
-simulator-independent.
-
-Note the read is not "on posedge" — it is combinational
-(`assign rs1_data = ...`). The posedge is merely when ID/EX samples it.
-
-**The trade-off, stated honestly.** The write path now only gets half a clock
-period, which hurts at synthesis and limits Fmax. Production designs keep
-everything posedge and add an **internal bypass mux** instead:
+**The fix.** Bypass the write port inside the register file. When the write
+port targets a register being read, return the incoming write data instead of
+the stored value:
 
 ```verilog
-assign rs1_data = (reg_write && rd_addr == rs1_addr && rd_addr != 0)
-                  ? rd_data : registers[rs1_addr];
+wire rs1_bypass = reg_write && (rd_addr != 5'd0) && (rd_addr == rs1_addr);
+
+assign rs1_data = (rs1_addr == 5'd0) ? 32'd0   :
+                  rs1_bypass         ? rd_data :
+                                       registers[rs1_addr];
 ```
 
-Same behaviour, no half-cycle penalty. The falling-edge version was chosen here
-because it is the textbook construction and keeps the module trivially readable;
-the bypass mux is the right answer if this were being taped out.
+The bypassed value is combinationally valid for the entire cycle, so the clock
+edge is no longer a race — ID/EX latches the correct data regardless of how a
+simulator orders the array write. The write itself stays on `posedge`, keeping
+the whole design on one clock edge.
+
+**Note the priority order.** `x0` outranks the bypass. A write to `x0` is
+discarded by the write logic, so a read of `x0` must still return zero even
+while the write port is aimed at it. Testing the bypass before the `x0` check
+would let `x0` briefly appear non-zero.
+
+**The alternative.** An earlier version of this design committed the write on
+the **falling** edge instead — the classic "write in the first half of the
+cycle, read in the second half" construction. It fixes the same race and is
+marginally simpler to read, but it gives the write path only half a clock
+period, which limits Fmax at synthesis, and it puts one lone sequential element
+on the opposite clock edge from everything else. The bypass mux costs two
+comparators and keeps the timing budget and the clocking convention intact.
+
+**Both bundled tests depend on this.** Removing the bypass makes fib(5) return
+3 instead of 5, and the load-use program return 7 instead of 27 — so the path
+is genuinely exercised, not merely present.
 
 ---
 
-## Worked example: cycle-by-cycle trace
+## Worked examples: cycle-by-cycle traces
 
-The bundled program computes fib(5) and stores it to `mem[0]`:
+### Test 1 — branch flush
+
+The first program computes fib(5) and stores it to `mem[0]`:
 
 ```asm
         addi x1, x0, 1     # x1 = 1
@@ -541,6 +560,39 @@ draining through EX and MEM in cycle 14.
 This matches the testbench trace exactly — `PC = 0x28` at cycle 11,
 `PC = 0x2c` at cycle 12, `PC = 0x10` at cycle 13.
 
+### Test 2 — load-use stall
+
+The second program forces the one hazard forwarding cannot fix:
+
+```asm
+0x00:   addi x1, x0, 7     # x1 = 7
+0x04:   sw   x1, 0(x0)     # mem[0] = 7   (store data forwarded from EX/MEM)
+0x08:   addi x2, x0, 20    # x2 = 20
+0x0c:   lw   x3, 0(x0)     # x3 = 7
+0x10:   add  x4, x3, x2    # consumes x3 one cycle early
+0x14:   sw   x4, 4(x0)     # mem[1] = 27
+```
+
+| Cycle | IF | ID | EX | MEM | WB | `stall` |
+|---:|---|---|---|---|---|:---:|
+| 5 | `add @10` | `lw @0c` | `addi @08` | `sw @04` | `addi @00` | 0 |
+| 6 | `sw @14` | **`add @10`** | **`lw @0c`** | `addi @08` | `sw @04` | **1** |
+| 7 | `sw @14` *(held)* | `add @10` *(held)* | bubble | `lw @0c` | `addi @08` | 0 |
+| 8 | `-- @18` | `sw @14` | `add @10` | bubble | `lw @0c` | 0 |
+
+At cycle 6 the hazard detection unit sees a load in ID/EX (`rd = x3`,
+`mem_read = 1`) and a consumer in IF/ID reading `x3`. It asserts `stall`, and on
+that edge the PC and IF/ID both hold while ID/EX takes a bubble.
+
+The payoff is at cycle 8. The `add` has moved into EX and the `lw` has reached
+WB, so what was an impossible backwards-in-time dependency is now an ordinary
+distance-2 forward — `forward_a = 2'b01`, MEM/WB to the ALU input. One lost
+cycle converts the hazard into one the forwarding unit already handles.
+
+The testbench asserts both halves: `mem[1] == 27` proves the right value
+arrived, and `stall_count == 1` proves the interlock fired exactly once rather
+than never or forever.
+
 ---
 
 ## Performance
@@ -569,27 +621,45 @@ step after that.
 
 ## Verification coverage
 
-`tb_riscv_top.v` drives a 100 MHz clock, releases the active-low reset after
-20 ns, prints a per-cycle trace of the PC, the fetched instruction, `x1`, `x2`,
-`x3`, `x5` and `mem[0]`, then asserts `mem[0] == 5` and prints PASS or FAIL.
-It uses hierarchical references (`dut.regfile.registers[1]`) to peek inside the
-design without adding debug ports to the RTL.
+Two directed, self-checking test programs. Both drive a 100 MHz clock, release
+the active-low reset after 20 ns, print a per-cycle trace, and end in an
+explicit PASS/FAIL assertion. Both use hierarchical references
+(`dut.regfile.registers[1]`) to inspect state without adding debug ports to the
+RTL, and both select their instruction image through the `PROGRAM` parameter on
+`riscv_top`.
 
-Being precise about what the bundled program actually proves:
+**Test 1 — `tb_riscv_top.v` (fib(5)).** Asserts `mem[0] == 5`. The loop body is
+a chain in which every instruction depends on the one immediately before it, so
+both forwarding distances are hit on every iteration, and the `beq`/`jal` pair
+exercises the flush path three times.
+
+**Test 2 — `tb_loaduse.v` (load-use).** Asserts `mem[1] == 27` **and** that
+`stall` asserted for exactly one cycle. The second condition is what makes it a
+real interlock test rather than a data test: without the stall the `add` reads a
+stale `x3 = 0` and stores 20, and a stall that never released would hang the
+count.
 
 | Exercised | Implemented but not exercised |
 |---|---|
-| `addi`, `add`, `beq` (taken **and** not-taken), `jal`, `sw` | `sub`, `and`, `or`, `slt`, `srl`, `andi`, `ori` |
-| EX/MEM forwarding (distance 1) | `lw`, `jalr` |
-| MEM/WB forwarding (distance 2) | Load-use stall path |
-| Branch flush on 3 taken transfers | Store-data forwarding (`fwd_rs2` → `sw`) |
-| Back-to-back dependent ALU ops | |
+| `addi`, `add`, `beq` (taken **and** not-taken), `jal`, `sw`, `lw` | `sub`, `and`, `or`, `slt`, `srl`, `andi`, `ori` |
+| EX/MEM forwarding (distance 1) | `jalr` |
+| MEM/WB forwarding (distance 2) | Branch-not-taken with a backward offset |
+| Register-file write bypass (distance 3) | |
+| Load-use stall, verified to fire exactly once | |
+| Branch flush on 3 taken transfers | |
+| Store-data forwarding (`fwd_rs2` → `sw`) | |
 
-The loop body is a chain in which every instruction depends on the one before
-it, so both forwarding paths are hit on every iteration — that part is well
-covered. The gap is loads: with no `lw` in the program, the load-use interlock
-is elaborated and simulated but never actually triggered. Closing that gap
-needs one more test program, not more RTL.
+Each hazard mechanism was confirmed to be **load-bearing**, not merely present,
+by breaking it and checking that a test notices:
+
+| Mechanism disabled | fib(5) | load-use |
+|---|---|---|
+| Register-file write bypass removed | FAIL — `mem[0] = 3` | FAIL — `mem[1] = 7` |
+| I-type `funct7` misdecode (pre-fix) | passes | passes — caught by a separate directed case |
+
+The remaining gap is instruction coverage rather than hazard coverage: seven
+ALU operations and `jalr` are implemented and decode correctly by inspection,
+but no directed test drives them.
 
 ---
 
@@ -628,7 +698,8 @@ A summary of the choices worth defending, with the alternative in each case.
 | `pc_plus_4` recomputed in ID | Link value must follow the instruction, not the fetch | Pipe IF's value — wrong after a redirect |
 | Branch resolved in EX | Reuses the ALU; no extra comparator | Resolve in ID — 1-cycle penalty, needs a comparator and ID forwarding |
 | `take_branch` computed, not a control output | Depends on `zero_flag`, a datapath value | PCSrc from control — impossible without predication |
-| Falling-edge register file write | Removes a real simulator-dependent race | Internal bypass mux — better Fmax, slightly more logic |
+| Register-file write bypass, write stays on posedge | Removes a real simulator-dependent race without splitting the clocking convention | Falling-edge write — simpler to read, but halves the write timing budget |
+| `PROGRAM` parameter on `riscv_top` | Lets each testbench pick its own image; no edit-and-rebuild between tests | Hardcoded `$readmemh` — one program per checkout |
 | Uniform stall/flush ports on all four pipeline registers | Read once, understood everywhere; easy to extend | Minimal ports — less code, harder to add memory stalls |
 | Flush clears datapath fields too, not just control | Readable waveforms while debugging | Clear control only — strictly sufficient, noisier waveforms |
 | `4'bXXXX` on unsupported decode | Fails loudly in simulation | Default to ADD — hides bugs |

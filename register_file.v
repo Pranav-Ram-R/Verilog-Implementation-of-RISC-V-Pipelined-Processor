@@ -2,19 +2,23 @@
 
 // 32 general-purpose registers, combinational read, x0 hardwired to zero.
 //
-// The write port is clocked on the FALLING edge. In the 5-stage pipeline a
-// producer in WB and a consumer in ID can occupy the same cycle (a distance-3
-// dependency). If the write committed on the same rising edge that the
-// consumer's ID/EX register latched the read result, the outcome would depend
-// on delta-cycle ordering between the combinational read and the pipeline
-// register latch, which different simulators resolve differently. Committing
-// on the falling edge places the write half a cycle earlier, so the value is
-// already in the array before the next rising edge samples it. This is the
-// standard "write in the first half of the cycle, read in the second half"
-// register file, and it removes the race entirely.
+// The read ports bypass the write port internally. In the 5-stage pipeline a
+// producer in WB and a consumer in ID occupy the same cycle for a distance-3
+// dependency, and there is no forwarding path back into ID, so the register
+// file itself must deliver the value being written right now. When the write
+// port targets a register being read, the incoming write data is returned
+// instead of the stored value.
 //
-// This is the only sequential element in the design that is not posedge-
-// triggered; everything else follows the rising-edge convention.
+// The bypass is what makes a rising-edge write safe. Without it, the array
+// update and the ID/EX register latching the read result land on the same
+// clock edge, and the winner depends on delta-cycle ordering between a
+// nonblocking array write and a combinational read - which Icarus and Vivado
+// xsim resolve differently, giving different results from identical RTL. The
+// bypassed value is combinationally valid for the whole cycle, so the edge is
+// unambiguous.
+//
+// x0 outranks the bypass: writes to x0 are discarded, so a read of x0 must
+// still return zero even while the write port is aimed at it.
 
 module register_file (
     input  wire        clk,
@@ -30,10 +34,19 @@ module register_file (
     reg [31:0] registers [0:31];
     integer i;
 
-    assign rs1_data = (rs1_addr == 5'd0) ? 32'd0 : registers[rs1_addr];
-    assign rs2_data = (rs2_addr == 5'd0) ? 32'd0 : registers[rs2_addr];
+    // Write-port bypass: WB commits this cycle, ID must observe it this cycle.
+    wire rs1_bypass = reg_write && (rd_addr != 5'd0) && (rd_addr == rs1_addr);
+    wire rs2_bypass = reg_write && (rd_addr != 5'd0) && (rd_addr == rs2_addr);
 
-    always @(negedge clk or negedge rst_n) begin
+    assign rs1_data = (rs1_addr == 5'd0) ? 32'd0   :
+                      rs1_bypass         ? rd_data :
+                                           registers[rs1_addr];
+
+    assign rs2_data = (rs2_addr == 5'd0) ? 32'd0   :
+                      rs2_bypass         ? rd_data :
+                                           registers[rs2_addr];
+
+    always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
             for (i = 0; i < 32; i = i + 1)
                 registers[i] <= 32'd0;

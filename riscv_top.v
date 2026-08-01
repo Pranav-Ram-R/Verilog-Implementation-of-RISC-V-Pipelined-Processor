@@ -12,7 +12,9 @@
 // combinational memory and register reads, two-level ALU decode, x0 hardwired,
 // 2-bit writeback mux, and PCSrc computed rather than emitted by control.
 
-module riscv_top (
+module riscv_top #(
+    parameter PROGRAM = "program.hex"     // instruction image, selectable per testbench
+)(
     input  wire clk,
     input  wire rst_n
 );
@@ -43,7 +45,7 @@ module riscv_top (
         .pc_current (pc_current)
     );
 
-    instruction_memory imem (
+    instruction_memory #(.PROGRAM (PROGRAM)) imem (
         .addr        (pc_current),
         .instruction (instruction)
     );

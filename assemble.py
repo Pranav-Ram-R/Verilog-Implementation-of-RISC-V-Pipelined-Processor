@@ -56,7 +56,9 @@ def jal(rd, imm):        return encode_J(reg(rd), imm, 0b1101111)
 def lw(rd, rs1, imm):    return encode_I(reg(rd), reg(rs1), imm, 0b010, 0b0000011)
 def sw(rs1, rs2, imm):   return encode_S(reg(rs1), reg(rs2), imm, 0b010, 0b0100011)
 
-# Program:
+# ---------------------------------------------------------------------------
+# Program 1 - fib(5): exercises forwarding and taken-branch flushes
+# ---------------------------------------------------------------------------
 #   addi x1, x0, 1       # x1 = 1
 #   addi x2, x0, 1       # x2 = 1
 #   addi x3, x0, 3       # x3 = 3 (counter)
@@ -84,7 +86,7 @@ def sw(rs1, rs2, imm):   return encode_S(reg(rs1), reg(rs2), imm, 0b010, 0b01000
 # 0x24: jal x0, loop     -- offset to 0x10 from 0x24 = -20
 # 0x28: sw  x0, x2, 0    <- "done"
 
-program = [
+fib_program = [
     ("addi x1, x0, 1",   addi("x1", "x0", 1)),
     ("addi x2, x0, 1",   addi("x2", "x0", 1)),
     ("addi x3, x0, 3",   addi("x3", "x0", 3)),
@@ -98,14 +100,39 @@ program = [
     ("sw   x0, x2, 0",   sw("x0", "x2", 0)),
 ]
 
-for asm, enc in program:
-    print(f"{enc:08x}    // {asm}")
+# ---------------------------------------------------------------------------
+# Program 2 - load-use: exercises the hazard detection unit's 1-cycle stall
+# ---------------------------------------------------------------------------
+#   addi x1, x0, 7       # x1 = 7
+#   sw   x1, 0(x0)       # mem[0] = 7   (store data forwarded from EX/MEM)
+#   addi x2, x0, 20      # x2 = 20
+#   lw   x3, 0(x0)       # x3 = 7
+#   add  x4, x3, x2      # consumes x3 one cycle early -> load-use stall
+#   sw   x4, 4(x0)       # mem[1] = 27
+#
+# Without the stall the add would read a stale x3 = 0 and store 20, so a
+# result of 27 is what proves the interlock actually fired.
 
-# Plain hex file, no comments, for $readmemh
-OUT = "program.hex"
-with open(OUT, "w") as f:
-    for _, enc in program:
-        f.write(f"{enc:08x}\n")
+loaduse_program = [
+    ("addi x1, x0, 7",   addi("x1", "x0", 7)),
+    ("sw   x1, 0(x0)",   sw("x0", "x1", 0)),
+    ("addi x2, x0, 20",  addi("x2", "x0", 20)),
+    ("lw   x3, 0(x0)",   lw("x3", "x0", 0)),
+    ("add  x4, x3, x2",  add("x4", "x3", "x2")),
+    ("sw   x4, 4(x0)",   sw("x0", "x4", 4)),
+]
 
-print()
-print(f"Wrote {OUT}")
+
+def emit(title, filename, prog):
+    """Print the listing and write a bare hex image for $readmemh."""
+    print(f"# {title}")
+    for asm, enc in prog:
+        print(f"{enc:08x}    // {asm}")
+    with open(filename, "w") as f:
+        for _, enc in prog:
+            f.write(f"{enc:08x}\n")
+    print(f"Wrote {filename}\n")
+
+
+emit("fib(5) - forwarding and branch flush", "program.hex", fib_program)
+emit("load-use - hazard detection stall", "program_loaduse.hex", loaduse_program)

@@ -1,7 +1,8 @@
 `timescale 1ns / 1ps
 
 module instruction_memory #(
-    parameter MEM_DEPTH = 256       // number of 32-bit words
+    parameter PROGRAM   = "program.hex",  // image loaded at elaboration
+    parameter MEM_DEPTH = 256             // number of 32-bit words
 )(
     input  wire [31:0] addr,
     output wire [31:0] instruction
@@ -14,7 +15,7 @@ module instruction_memory #(
 
     // Preload program at elaboration
     initial begin
-        $readmemh("program.hex", mem);
+        $readmemh(PROGRAM, mem);
     end
 
 endmodule

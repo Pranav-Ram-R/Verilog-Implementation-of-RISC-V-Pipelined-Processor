@@ -24,6 +24,7 @@ xsim*.tcl
 
 # Icarus Verilog output
 sim
+sim_*
 a.out
 *.vvp
 *.vcd

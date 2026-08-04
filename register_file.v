@@ -1,24 +1,7 @@
 `timescale 1ns / 1ps
 
 // 32 general-purpose registers, combinational read, x0 hardwired to zero.
-//
-// The read ports bypass the write port internally. In the 5-stage pipeline a
-// producer in WB and a consumer in ID occupy the same cycle for a distance-3
-// dependency, and there is no forwarding path back into ID, so the register
-// file itself must deliver the value being written right now. When the write
-// port targets a register being read, the incoming write data is returned
-// instead of the stored value.
-//
-// The bypass is what makes a rising-edge write safe. Without it, the array
-// update and the ID/EX register latching the read result land on the same
-// clock edge, and the winner depends on delta-cycle ordering between a
-// nonblocking array write and a combinational read - which Icarus and Vivado
-// xsim resolve differently, giving different results from identical RTL. The
-// bypassed value is combinationally valid for the whole cycle, so the edge is
-// unambiguous.
-//
-// x0 outranks the bypass: writes to x0 are discarded, so a read of x0 must
-// still return zero even while the write port is aimed at it.
+
 
 module register_file (
     input  wire        clk,

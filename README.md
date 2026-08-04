@@ -1,15 +1,10 @@
 # RISC-V RV32I 5-Stage Pipelined Processor
 
-A synthesisable 5-stage pipelined RV32I CPU written in structural Verilog-2001,
+A synthesisable 5-stage pipelined RV32I CPU written in structural Verilog,
 with full operand forwarding, a load-use interlock, branch resolution in the
 execute stage, and a self-checking testbench.
 
-The design is deliberately built out of small single-purpose modules wired
-together at the top level, rather than one large behavioural block, so that
-each piece of the datapath can be pointed at and explained in isolation.
 
-**Verified:** compiles with zero errors and zero warnings under Vivado xsim
-2019.2 and Icarus Verilog; both bundled directed test programs pass.
 
 ---
 

@@ -29,15 +29,6 @@ execute stage, and a self-checking testbench.
 
 ## Quick start
 
-**Icarus Verilog:**
-
-There are two testbenches, so name the one you want with `-s`:
-
-```bash
-iverilog -s tb_riscv_top -o sim_fib     *.v && vvp sim_fib
-iverilog -s tb_loaduse   -o sim_loaduse *.v && vvp sim_loaduse
-```
-
 **Vivado xsim, command line:**
 
 ```bash
